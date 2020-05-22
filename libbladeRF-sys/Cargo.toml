@@ -1,0 +1,13 @@
+[package]
+name = "libbladerf-sys"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2018"
+links = "bladeRF"
+build = "build.rs"
+
+[dependencies]
+bitfield = "0.13"
+
+[build-dependencies]
+bindgen = "0.53"
