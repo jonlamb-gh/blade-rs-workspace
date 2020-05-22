@@ -1,9 +1,6 @@
 use crate::ffi::{bladerf_backend, bladerf_devinfo};
 use crate::Error;
-use std::ffi::CStr;
-use std::str;
-
-// TODO - impl Debug/Display
+use std::{ffi::CStr, fmt, str};
 
 #[derive(Copy, Clone)]
 pub struct DeviceInfo {
@@ -46,5 +43,18 @@ impl DeviceInfo {
 impl From<bladerf_devinfo> for DeviceInfo {
     fn from(t: bladerf_devinfo) -> DeviceInfo {
         DeviceInfo { inner: t }
+    }
+}
+
+impl fmt::Display for DeviceInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}, USB {}:{}, serial={}",
+            self.product().unwrap_or("NA"),
+            self.usb_bus(),
+            self.usb_addr(),
+            self.serial().unwrap_or("NA")
+        )
     }
 }

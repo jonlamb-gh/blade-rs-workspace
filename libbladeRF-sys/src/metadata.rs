@@ -1,8 +1,6 @@
 use crate::ffi::bladerf_metadata;
 use bitfield::bitfield;
-
-// TODO
-// - impl Display
+use std::fmt;
 
 bitfield! {
     pub struct MetaFlags(u32);
@@ -31,7 +29,6 @@ impl MetaFlags {
     }
 }
 
-// TODO - tests
 bitfield! {
     pub struct MetaStatus(u32);
     impl Debug;
@@ -88,8 +85,8 @@ impl Metadata {
         self.inner.timestamp
     }
 
-    pub fn flags(&self) -> u32 {
-        self.inner.flags
+    pub fn flags(&self) -> MetaFlags {
+        MetaFlags(self.inner.flags)
     }
 
     pub fn set_flags(&mut self, flags: MetaFlags) {
@@ -108,6 +105,19 @@ impl Metadata {
 impl From<bladerf_metadata> for Metadata {
     fn from(t: bladerf_metadata) -> Metadata {
         Metadata { inner: t }
+    }
+}
+
+impl fmt::Display for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "t={}, actual-count={}, flags=0x{:X}, status=0x{:X}",
+            self.timesample(),
+            self.actual_count(),
+            self.flags().0,
+            self.status().0,
+        )
     }
 }
 

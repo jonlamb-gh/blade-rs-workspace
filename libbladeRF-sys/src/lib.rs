@@ -1,113 +1,42 @@
 //! Generated Rust bindings for libbladeRF
 //!
-//! https://github.com/Nuand/bladeRF/tree/master/host/libraries/libbladeRF
-
-// https://www.nuand.com/bladeRF-doc/libbladeRF/v2.2.1/index.html
-// https://github.com/Nuand/bladeRF/blob/master/host/libraries/libbladeRF_test/test_open/src/main.c
-// https://github.com/Nuand/bladeRF/blob/master/host/libraries/libbladeRF_test/test_rx_discont/src/main.c
-// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html
-// https://doc.rust-lang.org/std/ffi/struct.CStr.html
+//! [libbladeRF](https://github.com/Nuand/bladeRF/tree/master/host/libraries/libbladeRF)
+//!
+//! [C API Docs](https://www.nuand.com/libbladeRF-doc/)
 
 // TODO
+// - separate out this crate into two crates, sys crate is just the C stuff
 // - need to double check the bindgen enum use
-// - opaque struct bladerf_stream
-// - de-dupe the ffi error checking with helper macro
-// - newtype the aliases
+// - check/fix the CString stuff
+// - use utils in https://crates.io/crates/hertz
 
-use std::ffi::CStr;
-use std::ffi::CString;
+use std::convert::TryInto;
+use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
+mod channel;
+mod channel_layout;
 mod device_info;
+mod error;
 pub mod ffi;
+mod format;
 mod metadata;
+mod units;
 
+pub use channel::Channel;
+pub use channel_layout::ChannelLayout;
 pub use device_info::DeviceInfo;
-pub use metadata::{MetaStatus, Metadata};
+pub use error::Error;
+pub use format::Format;
+pub use metadata::{MetaFlags, MetaStatus, Metadata};
+pub use units::{Hertz, KiloHertz, MegaHertz, MilliSeconds, Sps, UnitExt};
 
-// TODO - move to file
-// use the bindgen BLADERF_ERR_UNEXPECTED... consts
-// Error enum
-// impl From<::std::os::raw::c_int> for Error
-#[non_exhaustive]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Error {
-    CString,
-    Unexpected,
-}
+pub type Frequency = Hertz;
+pub type Bandwidth = Hertz;
+pub type SampleRate = Sps;
 
-// BLADERF_SAMPLERATE_MIN
-// BLADERF_SAMPLERATE_REC_MAX
-pub type SampleRate = ffi::bladerf_sample_rate;
-
-// BLADERF_BANDWIDTH_MIN
-// BLADERF_BANDWIDTH_MAX
-pub type Bandwidth = ffi::bladerf_bandwidth;
-
-// BLADERF_FREQUENCY_MIN
-// BLADERF_FREQUENCY_MAX
-pub type Frequency = ffi::bladerf_frequency;
-
-// TODO - ffi tests
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Channel {
-    Rx0,
-    Rx1,
-    Tx0,
-    Tx1,
-}
-
-impl Channel {
-    fn into_ffi(self) -> ffi::bladerf_channel {
-        use Channel::*;
-        match self {
-            Rx0 => (0 << 1) | 0x0,
-            Rx1 => (1 << 1) | 0x0,
-            Tx0 => (0 << 1) | 0x1,
-            Tx1 => (1 << 1) | 0x1,
-        }
-    }
-}
-
-// TODO - ffi tests
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ChannelLayout {
-    RxX1,
-    TxX1,
-    RxX2,
-    TxX2,
-}
-
-impl ChannelLayout {
-    fn into_ffi(self) -> ffi::bladerf_channel_layout {
-        use ffi::bladerf_channel_layout::*;
-        use ChannelLayout::*;
-        match self {
-            RxX1 => BLADERF_RX_X1,
-            TxX1 => BLADERF_TX_X1,
-            RxX2 => BLADERF_RX_X2,
-            TxX2 => BLADERF_TX_X2,
-        }
-    }
-}
-
-// TODO - ffi tests
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Format {
-    Sc16Q11,
-    Sc16Q11Meta,
-}
-
-impl Format {
-    fn into_ffi(self) -> ffi::bladerf_format {
-        use ffi::bladerf_format::*;
-        use Format::*;
-        match self {
-            Sc16Q11 => BLADERF_FORMAT_SC16_Q11,
-            Sc16Q11Meta => BLADERF_FORMAT_SC16_Q11_META,
-        }
-    }
-}
+pub const SAMPLES_PER_BUFFER: usize = 1024;
+pub const I16_PER_SAMPLE: usize = 2;
 
 #[derive(Debug)]
 pub struct Device {
@@ -123,13 +52,12 @@ impl Device {
         let dev_id_cstr = CString::new(device_id).map_err(|_| Error::CString)?;
         let mut dev = MaybeUninit::<*mut ffi::bladerf>::uninit();
         let err = unsafe { ffi::bladerf_open(dev.as_mut_ptr(), dev_id_cstr.as_c_str().as_ptr()) };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         let dev = unsafe { dev.assume_init() };
         if dev.is_null() {
-            todo!();
+            return Err(Error::Invalid);
         }
         Ok(Device { dev })
     }
@@ -141,9 +69,8 @@ impl Device {
 
     pub fn device_reset(&mut self) -> Result<(), Error> {
         let err = unsafe { ffi::bladerf_device_reset(self.dev) };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         Ok(())
     }
@@ -151,9 +78,8 @@ impl Device {
     pub fn device_info(&mut self) -> Result<DeviceInfo, Error> {
         let mut info = MaybeUninit::<ffi::bladerf_devinfo>::uninit();
         let err = unsafe { ffi::bladerf_get_devinfo(self.dev, info.as_mut_ptr()) };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         let info = unsafe { info.assume_init() };
         Ok(DeviceInfo::from(info))
@@ -170,75 +96,96 @@ impl Device {
         slice.to_str().map_err(|_| Error::CString)
     }
 
-    pub fn set_sample_rate(&mut self, ch: Channel, rate: SampleRate) -> Result<SampleRate, Error> {
+    pub fn set_sample_rate<T: Into<Sps>>(
+        &mut self,
+        ch: Channel,
+        sample_rate: T,
+    ) -> Result<SampleRate, Error> {
+        let sps: Sps = sample_rate.into();
         let mut actual = MaybeUninit::<ffi::bladerf_sample_rate>::uninit();
         let err = unsafe {
-            ffi::bladerf_set_sample_rate(self.dev, ch.into_ffi(), rate, actual.as_mut_ptr())
+            ffi::bladerf_set_sample_rate(
+                self.dev,
+                ch.into_ffi(),
+                sps.0.try_into().map_err(|_| Error::Range)?,
+                actual.as_mut_ptr(),
+            )
         };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         let actual = unsafe { actual.assume_init() };
-        Ok(actual)
+        Ok(actual.sps())
     }
 
-    pub fn set_bandwidth(&mut self, ch: Channel, bandwidth: Bandwidth) -> Result<Bandwidth, Error> {
+    pub fn set_bandwidth<T: Into<Hertz>>(
+        &mut self,
+        ch: Channel,
+        bandwidth: T,
+    ) -> Result<Bandwidth, Error> {
+        let hertz: Hertz = bandwidth.into();
         let mut actual = MaybeUninit::<ffi::bladerf_bandwidth>::uninit();
         let err = unsafe {
-            ffi::bladerf_set_bandwidth(self.dev, ch.into_ffi(), bandwidth, actual.as_mut_ptr())
+            ffi::bladerf_set_bandwidth(
+                self.dev,
+                ch.into_ffi(),
+                hertz.0.try_into().map_err(|_| Error::Range)?,
+                actual.as_mut_ptr(),
+            )
         };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         let actual = unsafe { actual.assume_init() };
-        Ok(actual)
+        Ok(actual.hz())
     }
 
-    pub fn set_frequency(&mut self, ch: Channel, frequency: Frequency) -> Result<(), Error> {
-        let err = unsafe { ffi::bladerf_set_frequency(self.dev, ch.into_ffi(), frequency) };
-        match err {
-            0 => (),
-            _ => todo!(),
+    pub fn set_frequency<T: Into<Hertz>>(
+        &mut self,
+        ch: Channel,
+        frequency: T,
+    ) -> Result<(), Error> {
+        let hertz: Hertz = frequency.into();
+        let err = unsafe { ffi::bladerf_set_frequency(self.dev, ch.into_ffi(), hertz.0) };
+        if err != 0 {
+            return Err(Error::from(err));
         }
         Ok(())
     }
 
-    // cli uses these defaults
-    // https://github.com/Nuand/bladeRF/blob/master/host/utilities/bladeRF-cli/src/cmd/rxtx.c#L394
     pub fn sync_config(
         &mut self,
         layout: ChannelLayout,
         format: Format,
-        num_buffers: u32,
-        buffer_size: u32,
-        num_transfers: u32,
-        stream_timeout_ms: u32,
+        num_buffers: usize,
+        samples_per_buffer: usize,
+        num_transfers: usize,
+        stream_timeout: MilliSeconds,
     ) -> Result<(), Error> {
+        if samples_per_buffer % SAMPLES_PER_BUFFER != 0 {
+            return Err(Error::SamplesPerBuffer);
+        }
         let err = unsafe {
             ffi::bladerf_sync_config(
                 self.dev,
                 layout.into_ffi(),
                 format.into_ffi(),
-                num_buffers,
-                buffer_size,
-                num_transfers,
-                stream_timeout_ms,
+                num_buffers.try_into().map_err(|_| Error::Range)?,
+                samples_per_buffer.try_into().map_err(|_| Error::Range)?,
+                num_transfers.try_into().map_err(|_| Error::Range)?,
+                stream_timeout.0.try_into().map_err(|_| Error::Range)?,
             )
         };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         Ok(())
     }
 
     pub fn enable_module(&mut self, ch: Channel, enable: bool) -> Result<(), Error> {
         let err = unsafe { ffi::bladerf_enable_module(self.dev, ch.into_ffi(), enable) };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         Ok(())
     }
@@ -246,22 +193,29 @@ impl Device {
     pub fn sync_rx(
         &mut self,
         samples: &mut [i16],
-        num_samples: u32,
-        metadata: &mut Metadata,
-        timeout_ms: u32,
+        metadata: Option<&mut Metadata>,
+        timeout: MilliSeconds,
     ) -> Result<(), Error> {
+        if samples.len() % I16_PER_SAMPLE != 0 {
+            return Err(Error::SamplesLen);
+        }
+        let num_samples = samples.len() / 2;
+        let md_ptr = if let Some(md_ref) = metadata {
+            &mut md_ref.inner as *mut _
+        } else {
+            std::ptr::null_mut()
+        };
         let err = unsafe {
             ffi::bladerf_sync_rx(
                 self.dev,
                 samples.as_mut_ptr() as *mut _,
-                num_samples,
-                &mut metadata.inner as *mut _,
-                timeout_ms,
+                num_samples.try_into().map_err(|_| Error::Range)?,
+                md_ptr,
+                timeout.0.try_into().map_err(|_| Error::Range)?,
             )
         };
-        match err {
-            0 => (),
-            _ => todo!(),
+        if err != 0 {
+            return Err(Error::from(err));
         }
         Ok(())
     }
@@ -272,13 +226,5 @@ impl Drop for Device {
         if !self.dev.is_null() {
             unsafe { ffi::bladerf_close(self.dev) };
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }

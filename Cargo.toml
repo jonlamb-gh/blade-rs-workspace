@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "libbladeRF-sys",
+    "blade-log",
+]
