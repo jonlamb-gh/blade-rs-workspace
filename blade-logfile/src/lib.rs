@@ -19,6 +19,24 @@ pub struct Header {
     pub system_time: DateTime<Utc>,
 }
 
+impl Header {
+    pub fn check_preamble(&self) -> Result<(), ()> {
+        if self.preamble != HEADER_PREAMBLE {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn check_version(&self) -> Result<(), ()> {
+        if self.version != VERSION {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct Packet {
     pub timestamp: u64,

@@ -3,5 +3,6 @@
 members = [
     "libbladeRF-sys",
     "blade-logfile",
+    "blade-logfile-cli",
     "blade-log-cli",
 ]

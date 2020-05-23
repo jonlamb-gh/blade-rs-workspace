@@ -36,6 +36,12 @@ impl MetaFlags {
     }
 }
 
+impl fmt::Display for MetaFlags {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{:X}", self.0)
+    }
+}
+
 bitfield! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub struct MetaStatus(u32);
@@ -59,6 +65,12 @@ impl MetaStatus {
 impl From<u32> for MetaStatus {
     fn from(val: u32) -> Self {
         MetaStatus(val)
+    }
+}
+
+impl fmt::Display for MetaStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{:X}", self.0)
     }
 }
 
@@ -125,11 +137,11 @@ impl fmt::Display for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "t={}, actual-count={}, flags=0x{:X}, status=0x{:X}",
+            "t={}, actual-count={}, flags={}, status={}",
             self.timestamp(),
             self.actual_count(),
-            self.flags().0,
-            self.status().0,
+            self.flags(),
+            self.status(),
         )
     }
 }

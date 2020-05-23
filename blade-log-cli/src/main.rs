@@ -19,11 +19,9 @@ use structopt::StructOpt;
 //   - opt for buffered/non-buffered IO, ie if writing to /dev/shm/... no need for it
 // - fix the option docs
 
-// conversions if needed
+// conversions/defaults
 // https://github.com/Nuand/bladeRF/blob/master/host/utilities/bladeRF-cli/src/cmd/rx.c#L49
 // https://github.com/Nuand/bladeRF/blob/master/host/utilities/bladeRF-cli/src/cmd/rxtx.c#L394
-
-// https://github.com/servo/bincode
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "blade-log", about = "BladeRF logging")]
@@ -87,7 +85,7 @@ fn main() -> Result<(), bincode::Error> {
 
     log::info!("Creating '{}'", opts.output_path.display());
     let log_file = File::create(opts.output_path)?;
-    let mut out_stream = BufWriter::new(log_file);
+    let mut log_writer = BufWriter::new(log_file);
 
     log::info!("Opening device ID '{}'", opts.device_id);
     let mut dev = Device::open(&opts.device_id)
@@ -171,7 +169,7 @@ fn main() -> Result<(), bincode::Error> {
         format,
         system_time,
     };
-    serialize_into(&mut out_stream, &header)?;
+    serialize_into(&mut log_writer, &header)?;
 
     // x2 since each sample is a IQ pair (i16, i16)
     //let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
@@ -220,13 +218,13 @@ fn main() -> Result<(), bincode::Error> {
             status: metadata.status(),
             samples,
         };
-        serialize_into(&mut out_stream, &packet)?;
+        serialize_into(&mut log_writer, &packet)?;
 
         total_packets = total_packets.wrapping_add(1);
         total_samples = total_samples.wrapping_add(num_samples as _);
     }
 
-    out_stream.flush()?;
+    log_writer.flush()?;
 
     log::info!("Total packets: {}", total_packets);
     log::info!("Total samples: {}", total_samples);

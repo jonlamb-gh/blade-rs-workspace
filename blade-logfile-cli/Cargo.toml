@@ -1,0 +1,27 @@
+[package]
+name = "blade-logfile-cli"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2018"
+
+[[bin]]
+name = "blade-logfile"
+path = "src/main.rs"
+
+[dependencies]
+structopt = "0.3"
+bincode = "1.2"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dependencies.chrono]
+version = "0.4"
+features = ["serde"]
+
+[dependencies.libbladerf-sys]
+path = "../libbladeRF-sys"
+
+[dependencies.blade-logfile]
+path = "../blade-logfile"
