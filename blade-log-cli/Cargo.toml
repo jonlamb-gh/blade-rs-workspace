@@ -1,8 +1,12 @@
 [package]
-name = "blade-log"
+name = "blade-log-cli"
 version = "0.1.0"
 authors = ["Jon Lamb"]
 edition = "2018"
+
+[[bin]]
+name = "blade-log"
+path = "src/main.rs"
 
 [dependencies]
 log = "0.4"
@@ -17,3 +21,6 @@ features = ["derive"]
 
 [dependencies.libbladerf-sys]
 path = "../libbladeRF-sys"
+
+[dependencies.blade-logfile]
+path = "../blade-logfile"

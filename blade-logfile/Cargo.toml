@@ -1,0 +1,14 @@
+[package]
+name = "blade-logfile"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2018"
+
+[dependencies]
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dependencies.libbladerf-sys]
+path = "../libbladeRF-sys"

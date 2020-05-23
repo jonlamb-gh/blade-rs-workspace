@@ -1,4 +1,5 @@
 use bincode::serialize_into;
+use blade_logfile::{Header, Packet, HEADER_PREAMBLE, VERSION};
 use libbladerf_sys::*;
 use std::convert::TryFrom;
 use std::fs::File;
@@ -10,8 +11,6 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
-
-mod logfile;
 
 // TODO
 // - error/log pattern
@@ -158,9 +157,9 @@ fn main() -> Result<(), bincode::Error> {
         .unwrap();
     log::info!("Channel {} is active", channel);
 
-    let header = logfile::Header {
-        preamble: logfile::HEADER_PREAMBLE,
-        version: logfile::VERSION,
+    let header = Header {
+        preamble: HEADER_PREAMBLE,
+        version: VERSION,
         frequency: opts.frequency,
         sample_rate: opts.sample_rate,
         bandwidth: opts.bandwidth,
@@ -173,7 +172,7 @@ fn main() -> Result<(), bincode::Error> {
     // x2 since each sample is a IQ pair (i16, i16)
     //let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
 
-    let timeout_ms = 0_u32.ms();
+    let timeout_ms = 5000_u32.ms();
     let mut metadata = Metadata::new();
     let mut flags = MetaFlags::default();
     flags.set_rx_now(true);
@@ -211,7 +210,7 @@ fn main() -> Result<(), bincode::Error> {
 
         samples.truncate(num_samples);
 
-        let packet = logfile::Packet {
+        let packet = Packet {
             timestamp: metadata.timestamp(),
             flags: metadata.flags(),
             status: metadata.status(),
