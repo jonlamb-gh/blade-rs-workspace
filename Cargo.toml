@@ -5,4 +5,5 @@ members = [
     "blade-logfile",
     "blade-logfile-cli",
     "blade-log-cli",
+    "blade-power-log-cli",
 ]

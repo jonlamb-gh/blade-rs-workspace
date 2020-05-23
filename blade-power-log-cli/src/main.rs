@@ -1,32 +1,17 @@
-use bincode::serialize_into;
-use blade_logfile::{Header, Packet, HEADER_PREAMBLE, VERSION};
 use chrono::prelude::*;
 use libbladerf_sys::*;
+use rustfft::num_complex::Complex;
+use rustfft::num_traits::Zero;
+use rustfft::FFTplanner;
 use std::convert::TryFrom;
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::BufWriter;
-use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
 
-// TODO
-// - error/log pattern
-// - more opts, channel, timeouts, io-params, memory, etc
-//   - opt for buffered/non-buffered IO, ie if writing to /dev/shm/... no need for it
-// - fix the option docs
-// - log compression, https://crates.io/crates/snap
-// - checks with https://crates.io/crates/hertz
-
-// conversions/defaults
-// https://github.com/Nuand/bladeRF/blob/master/host/utilities/bladeRF-cli/src/cmd/rx.c#L49
-// https://github.com/Nuand/bladeRF/blob/master/host/utilities/bladeRF-cli/src/cmd/rxtx.c#L394
-
 #[derive(Debug, StructOpt)]
-#[structopt(name = "blade-log", about = "BladeRF logging")]
+#[structopt(name = "blade-power-log", about = "BladeRF power logging")]
 pub struct Opts {
     /// BladeRF device ID.
     ///
@@ -35,10 +20,6 @@ pub struct Opts {
     /// Example: "*:serial=f12ce1037830a1b27f3ceeba1f521413"
     #[structopt(short = "d", long, env = "BLADELOG_DEVICE_ID")]
     device_id: String,
-
-    /// Output file
-    #[structopt(short = "o", long, parse(from_os_str), env = "BLADELOG_OUTPUT_PATH")]
-    output_path: PathBuf,
 
     /// Frequency (Hertz)
     ///
@@ -84,10 +65,6 @@ fn main() -> Result<(), bincode::Error> {
         }
     })
     .expect("Error setting Ctrl-C handler");
-
-    log::info!("Creating '{}'", opts.output_path.display());
-    let log_file = File::create(opts.output_path)?;
-    let mut log_writer = BufWriter::new(log_file);
 
     log::info!("Opening device ID '{}'", opts.device_id);
     let mut dev = Device::open(&opts.device_id)
@@ -160,21 +137,9 @@ fn main() -> Result<(), bincode::Error> {
 
     let system_time = Utc::now();
     log::info!("Header system time: {}", system_time);
-    let header = Header {
-        preamble: HEADER_PREAMBLE,
-        version: VERSION,
-        frequency: opts.frequency,
-        sample_rate: opts.sample_rate,
-        bandwidth: opts.bandwidth,
-        channel,
-        layout: channel_layout,
-        format,
-        system_time,
-    };
-    serialize_into(&mut log_writer, &header)?;
 
     // x2 since each sample is a IQ pair (i16, i16)
-    //let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
+    let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
 
     let timeout_ms = 5000_u32.ms();
     let mut metadata = Metadata::new();
@@ -186,9 +151,6 @@ fn main() -> Result<(), bincode::Error> {
     let mut total_samples: u128 = 0;
 
     while running.load(Ordering::SeqCst) == 0 {
-        // TODO - fix this, don't allocate on each iter
-        let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
-
         metadata.clear();
         metadata.set_flags(flags);
 
@@ -212,21 +174,40 @@ fn main() -> Result<(), bincode::Error> {
             usize::try_from(metadata.actual_count()).expect("usize::From<u32>")
         };
 
-        samples.truncate(num_samples);
+        assert!(num_samples % 2 == 0);
+        let num_iq_pairs = num_samples / 2;
+        //samples.truncate(num_samples);
 
-        let packet = Packet {
-            timestamp: metadata.timestamp(),
-            flags: metadata.flags(),
-            status: metadata.status(),
-            samples,
-        };
-        serialize_into(&mut log_writer, &packet)?;
+        //let mut input: Vec<Complex<f32>> = vec![Complex::zero(); 1234];
+        //let mut output: Vec<Complex<f32>> = vec![Complex::zero(); 1234];
+        let mut input: Vec<Complex<f32>> = samples[..num_samples]
+            .chunks(2)
+            .map(|pair| {
+                let (i, q) = (normalize_sample(pair[0]), normalize_sample(pair[1]));
+                Complex::new(i, q)
+            })
+            .collect();
+        let mut output: Vec<Complex<f32>> = vec![Complex::zero(); num_iq_pairs];
+        assert_eq!(input.len(), output.len());
+
+        let mut planner = FFTplanner::new(false);
+        let fft = planner.plan_fft(num_iq_pairs);
+
+        // Ordered by ascending frequency,
+        // with the first element corresponding to frequency 0
+        fft.process(&mut input, &mut output);
+
+        let scale = (1_f32 / num_iq_pairs as f32).sqrt();
+        for iq in output.iter() {
+            let norm = iq.scale(scale);
+            let power = norm.norm_sqr();
+            let amplitude = power.sqrt();
+            println!("{} | pwr {} | amp {}", iq, power, amplitude);
+        }
 
         total_packets = total_packets.wrapping_add(1);
         total_samples = total_samples.wrapping_add(num_samples as _);
     }
-
-    log_writer.flush()?;
 
     log::info!("Total packets: {}", total_packets);
     log::info!("Total samples: {}", total_samples);
@@ -240,4 +221,13 @@ fn main() -> Result<(), bincode::Error> {
     dev.close();
 
     Ok(())
+}
+
+// Converts i16, in the range [-2048, 2048) to [-1.0, 1.0).
+// Note that the lower bound here is inclusive, and the upper bound is exclusive.
+// Samples should always be within [-2048, 2047].
+fn normalize_sample(s: i16) -> f32 {
+    assert!(s >= -2048);
+    assert!(s < 2048);
+    f32::from(s) / 2048.0
 }

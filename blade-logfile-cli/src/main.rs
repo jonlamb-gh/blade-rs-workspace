@@ -11,6 +11,10 @@ pub struct Opts {
     /// Input file
     #[structopt(short = "i", long, parse(from_os_str))]
     input_path: PathBuf,
+
+    /// Print the samples in each packet
+    #[structopt(long)]
+    show_samples: bool,
 }
 
 fn main() -> Result<(), bincode::Error> {
@@ -53,6 +57,14 @@ fn main() -> Result<(), bincode::Error> {
             packet.timestamp,
             packet.samples.len()
         );
+
+        if opts.show_samples {
+            for pair in packet.samples.chunks(2) {
+                let i = pair[0];
+                let q = pair[1];
+                println!("  {}, {}", i, q);
+            }
+        }
     }
 
     println!("Total packets: {}", total_packets);
