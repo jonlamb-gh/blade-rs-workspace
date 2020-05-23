@@ -1,7 +1,8 @@
 use crate::ffi;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum ChannelLayout {
     RxX1,
     TxX1,

@@ -1,25 +1,26 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
 /// Samples per second
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct Sps(pub u64);
 
 /// Hertz
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct Hertz(pub u64);
 
 /// KiloHertz
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct KiloHertz(pub u64);
 
 /// MegaHertz
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct MegaHertz(pub u64);
 
 /// MilliSeconds
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct MilliSeconds(pub u64);
 
 pub trait UnitExt {

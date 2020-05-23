@@ -1,10 +1,11 @@
 use crate::ffi::bladerf_metadata;
 use bitfield::bitfield;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 bitfield! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub struct MetaFlags(u32);
-    impl Debug;
     u32;
     pub tx_burst_start, set_tx_burst_start : 0;
     pub tx_burst_end, set_tx_burst_end : 1;
@@ -23,6 +24,12 @@ impl Default for MetaFlags {
     }
 }
 
+impl From<u32> for MetaFlags {
+    fn from(val: u32) -> Self {
+        MetaFlags(val)
+    }
+}
+
 impl MetaFlags {
     pub fn clear(&mut self) {
         self.0 = 0;
@@ -30,8 +37,8 @@ impl MetaFlags {
 }
 
 bitfield! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
     pub struct MetaStatus(u32);
-    impl Debug;
     u32;
     pub overrun, _ : 0;
     pub underrun, _ : 1;
@@ -46,6 +53,12 @@ impl Default for MetaStatus {
 impl MetaStatus {
     pub fn clear(&mut self) {
         self.0 = 0;
+    }
+}
+
+impl From<u32> for MetaStatus {
+    fn from(val: u32) -> Self {
+        MetaStatus(val)
     }
 }
 
@@ -81,7 +94,7 @@ impl Metadata {
         self.inner.reserved.iter_mut().for_each(|b| *b = 0);
     }
 
-    pub fn timesample(&self) -> u64 {
+    pub fn timestamp(&self) -> u64 {
         self.inner.timestamp
     }
 
@@ -113,7 +126,7 @@ impl fmt::Display for Metadata {
         write!(
             f,
             "t={}, actual-count={}, flags=0x{:X}, status=0x{:X}",
-            self.timesample(),
+            self.timestamp(),
             self.actual_count(),
             self.flags().0,
             self.status().0,

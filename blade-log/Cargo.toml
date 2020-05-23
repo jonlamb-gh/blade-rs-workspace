@@ -9,6 +9,11 @@ log = "0.4"
 env_logger = "0.7"
 structopt = "0.3"
 ctrlc = "3.1"
+bincode = "1.2"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
 
 [dependencies.libbladerf-sys]
 path = "../libbladeRF-sys"

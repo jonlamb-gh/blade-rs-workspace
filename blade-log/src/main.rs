@@ -1,4 +1,9 @@
+use bincode::serialize_into;
 use libbladerf_sys::*;
+use std::convert::TryFrom;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
@@ -6,9 +11,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
 
+mod logfile;
+
 // TODO
 // - error/log pattern
 // - more opts, channel, timeouts, io-params, memory, etc
+//   - opt for buffered/non-buffered IO, ie if writing to /dev/shm/... no need for it
 // - fix the option docs
 
 // conversions if needed
@@ -61,7 +69,7 @@ pub struct Opts {
     bandwidth: Hertz,
 }
 
-fn main() {
+fn main() -> Result<(), bincode::Error> {
     env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let opts = Opts::from_args();
     let running = Arc::new(AtomicUsize::new(0));
@@ -76,6 +84,10 @@ fn main() {
         }
     })
     .expect("Error setting Ctrl-C handler");
+
+    log::info!("Creating '{}'", opts.output_path.display());
+    let log_file = File::create(opts.output_path)?;
+    let mut out_stream = BufWriter::new(log_file);
 
     log::info!("Opening device ID '{}'", opts.device_id);
     let mut dev = Device::open(&opts.device_id)
@@ -146,25 +158,83 @@ fn main() {
         .unwrap();
     log::info!("Channel {} is active", channel);
 
+    let header = logfile::Header {
+        preamble: logfile::HEADER_PREAMBLE,
+        version: logfile::VERSION,
+        frequency: opts.frequency,
+        sample_rate: opts.sample_rate,
+        bandwidth: opts.bandwidth,
+        channel,
+        layout: channel_layout,
+        format,
+    };
+    serialize_into(&mut out_stream, &header)?;
+
     // x2 since each sample is a IQ pair (i16, i16)
-    let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
+    //let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
+
+    let timeout_ms = 0_u32.ms();
+    let mut metadata = Metadata::new();
+    let mut flags = MetaFlags::default();
+    flags.set_rx_now(true);
+
+    // TODO - log::info metrics periodically
+    let mut total_packets: u128 = 0;
+    let mut total_samples: u128 = 0;
 
     while running.load(Ordering::SeqCst) == 0 {
-        let mut metadata = Metadata::new();
-        let mut flags = MetaFlags::default();
-        flags.set_rx_now(true);
+        // TODO - fix this, don't allocate on each iter
+        let mut samples: Vec<i16> = vec![0; 32 * 1024 * 2];
+
+        metadata.clear();
         metadata.set_flags(flags);
-        let timeout_ms = 0_u32.ms();
-        println!("Requested num_samples: {}", samples.len());
+
+        log::trace!("SyncRx capacity {}", samples.len());
         dev.sync_rx(&mut samples, Some(&mut metadata), timeout_ms)
             .map_err(|e| log::error!("Device::sync_rx returned {:?}", e))
             .unwrap();
 
-        println!("{}", metadata);
-        // TODO - check flags/status, warns/etc
+        log::trace!("SyncRx-> {}", metadata);
+
+        let num_samples = if metadata.actual_count() == 0 {
+            log::warn!("Actual count is zero - logging an empty packet");
+            0
+        } else if metadata.status().underrun() {
+            log::warn!("Underrun detected");
+            usize::try_from(metadata.actual_count()).expect("usize::From<u32>")
+        } else if metadata.status().overrun() {
+            log::warn!("Overrun detected - logging an emtpy packet");
+            0
+        } else {
+            usize::try_from(metadata.actual_count()).expect("usize::From<u32>")
+        };
+
+        samples.truncate(num_samples);
+
+        let packet = logfile::Packet {
+            timestamp: metadata.timestamp(),
+            flags: metadata.flags(),
+            status: metadata.status(),
+            samples,
+        };
+        serialize_into(&mut out_stream, &packet)?;
+
+        total_packets = total_packets.wrapping_add(1);
+        total_samples = total_samples.wrapping_add(num_samples as _);
     }
+
+    out_stream.flush()?;
+
+    log::info!("Total packets: {}", total_packets);
+    log::info!("Total samples: {}", total_samples);
 
     log::info!("Closing device");
 
+    dev.enable_module(channel, false)
+        .map_err(|e| log::error!("Device::enable_module returned {:?}", e))
+        .unwrap();
+
     dev.close();
+
+    Ok(())
 }

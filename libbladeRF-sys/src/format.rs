@@ -1,7 +1,8 @@
 use crate::ffi;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum Format {
     Sc16Q11,
     Sc16Q11Meta,
