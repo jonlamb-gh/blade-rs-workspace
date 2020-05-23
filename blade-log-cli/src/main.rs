@@ -1,5 +1,6 @@
 use bincode::serialize_into;
 use blade_logfile::{Header, Packet, HEADER_PREAMBLE, VERSION};
+use chrono::prelude::*;
 use libbladerf_sys::*;
 use std::convert::TryFrom;
 use std::fs::File;
@@ -157,6 +158,8 @@ fn main() -> Result<(), bincode::Error> {
         .unwrap();
     log::info!("Channel {} is active", channel);
 
+    let system_time = Utc::now();
+    log::info!("Header system time: {}", system_time);
     let header = Header {
         preamble: HEADER_PREAMBLE,
         version: VERSION,
@@ -166,6 +169,7 @@ fn main() -> Result<(), bincode::Error> {
         channel,
         layout: channel_layout,
         format,
+        system_time,
     };
     serialize_into(&mut out_stream, &header)?;
 

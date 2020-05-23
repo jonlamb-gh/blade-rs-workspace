@@ -10,5 +10,9 @@ edition = "2018"
 version = "1.0"
 features = ["derive"]
 
+[dependencies.chrono]
+version = "0.4"
+features = ["serde"]
+
 [dependencies.libbladerf-sys]
 path = "../libbladeRF-sys"

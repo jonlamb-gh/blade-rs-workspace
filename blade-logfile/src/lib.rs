@@ -1,3 +1,4 @@
+use chrono::prelude::*;
 use libbladerf_sys::{Channel, ChannelLayout, Format, Hertz, MetaFlags, MetaStatus, Sps};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +16,7 @@ pub struct Header {
     pub channel: Channel,
     pub layout: ChannelLayout,
     pub format: Format,
-    // pub system_time: DataTime ?
+    pub system_time: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
