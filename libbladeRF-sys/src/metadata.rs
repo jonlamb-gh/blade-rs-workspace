@@ -98,6 +98,20 @@ impl Metadata {
         }
     }
 
+    pub fn new_rx_now() -> Self {
+        let mut flags = MetaFlags::default();
+        flags.set_rx_now(true);
+        Metadata {
+            inner: bladerf_metadata {
+                timestamp: 0,
+                flags: flags.0,
+                status: 0,
+                actual_count: 0,
+                reserved: [0; 32],
+            },
+        }
+    }
+
     pub fn clear(&mut self) {
         self.inner.timestamp = 0;
         self.inner.flags = 0;

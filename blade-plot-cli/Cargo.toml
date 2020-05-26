@@ -1,11 +1,11 @@
 [package]
-name = "blade-power-log-cli"
+name = "blade-plot-cli"
 version = "0.1.0"
 authors = ["Jon Lamb"]
 edition = "2018"
 
 [[bin]]
-name = "blade-power-log"
+name = "blade-plot"
 path = "src/main.rs"
 
 [dependencies]
@@ -15,6 +15,14 @@ structopt = "0.3"
 ctrlc = "3.1"
 bincode = "1.2"
 rustfft = "3.0"
+piston_window = "0.108"
+byteorder = "1.3"
+median = "0.3"
+
+[dependencies.plotters]
+version = "0.2"
+default_features = false
+features = ["piston", "line_series"]
 
 [dependencies.serde]
 version = "1.0"
