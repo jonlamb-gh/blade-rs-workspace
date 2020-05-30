@@ -23,6 +23,36 @@ pub struct MegaHertz(pub u64);
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 pub struct MilliSeconds(pub u64);
 
+impl Sps {
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
+impl Hertz {
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
+impl KiloHertz {
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
+impl MegaHertz {
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
+impl MilliSeconds {
+    pub fn as_f64(self) -> f64 {
+        self.0 as f64
+    }
+}
+
 pub trait UnitExt {
     /// Wrap in `Sps`
     fn sps(self) -> Sps;
@@ -162,10 +192,9 @@ impl fmt::Display for Sps {
     }
 }
 
-// TODO - display/auto_format fn to display as f64 in best-fit units
 impl fmt::Display for Hertz {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} Hz", self.0)
+        pretty_fmt(*self, f)
     }
 }
 
@@ -178,6 +207,19 @@ impl fmt::Display for KiloHertz {
 impl fmt::Display for MegaHertz {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} MHz", self.0)
+    }
+}
+
+pub const ONE_KHZ: Hertz = Hertz(1_000);
+pub const ONE_MHZ: Hertz = Hertz(1_000_000);
+
+fn pretty_fmt(h: Hertz, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if h.0 >= ONE_MHZ.0 {
+        write!(f, "{:.04} MHz", h.as_f64() / ONE_MHZ.as_f64())
+    } else if h.0 >= ONE_KHZ.0 {
+        write!(f, "{:.04} KHz", h.as_f64() / ONE_KHZ.as_f64())
+    } else {
+        write!(f, "{} Hz", h.0)
     }
 }
 

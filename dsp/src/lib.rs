@@ -38,11 +38,3 @@ where
         .enumerate()
         .for_each(|(i, c)| *c = src[i * dec]);
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

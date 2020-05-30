@@ -129,7 +129,7 @@ impl FromStr for BinnedFrequencyRange {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let split: Vec<&str> = s.split(":").collect();
+        let split: Vec<&str> = s.split(':').collect();
         if split.len() != 3 {
             return Err(ParseError::Syntax);
         }

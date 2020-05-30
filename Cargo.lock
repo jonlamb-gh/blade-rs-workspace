@@ -197,18 +197,13 @@ name = "blade-plot-cli"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "blade-logfile",
- "byteorder",
- "chrono",
  "ctrlc",
+ "dsp",
  "env_logger",
  "libbladerf-sys",
  "log",
- "median",
  "piston_window",
  "plotters",
- "rustfft",
- "serde",
  "structopt",
 ]
 
