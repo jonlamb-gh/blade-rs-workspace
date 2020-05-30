@@ -84,6 +84,24 @@ impl UnitExt for u64 {
     }
 }
 
+impl From<u64> for Hertz {
+    fn from(val: u64) -> Self {
+        Hertz(val)
+    }
+}
+
+impl From<u64> for KiloHertz {
+    fn from(val: u64) -> Self {
+        KiloHertz(val)
+    }
+}
+
+impl From<u64> for MegaHertz {
+    fn from(val: u64) -> Self {
+        MegaHertz(val)
+    }
+}
+
 impl Into<Hertz> for KiloHertz {
     fn into(self) -> Hertz {
         Hertz(self.0 * 1_000)
@@ -144,6 +162,7 @@ impl fmt::Display for Sps {
     }
 }
 
+// TODO - display/auto_format fn to display as f64 in best-fit units
 impl fmt::Display for Hertz {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} Hz", self.0)
@@ -184,7 +203,9 @@ impl fmt::Display for ParseHertzError {
 impl FromStr for Hertz {
     type Err = ParseHertzError;
 
-    // TODO - add floats, 1.4K -> 1_400 Hz
+    // TODO - add floats, 1.4K -> 1_400 Hz, GHz
+    // Values can be specified as an integer (89100000),
+    // a float (89.1e6) or as a metric suffix (89.1M)
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
             Err(ParseHertzError::Empty)

@@ -1,0 +1,12 @@
+[package]
+name = "dsp"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2018"
+
+[dependencies]
+rustfft = "3.0"
+median = "0.3"
+
+[dependencies.libbladerf-sys]
+path = "../libbladeRF-sys"

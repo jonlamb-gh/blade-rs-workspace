@@ -21,7 +21,7 @@ mod error;
 pub mod ffi;
 mod format;
 mod metadata;
-mod units;
+pub mod units;
 
 pub use channel::Channel;
 pub use channel_layout::ChannelLayout;

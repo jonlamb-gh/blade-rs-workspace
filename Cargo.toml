@@ -3,6 +3,7 @@
 members = [
     "libbladeRF-sys",
     "blade-logfile",
+    "dsp",
     "blade-logfile-cli",
     "blade-log-cli",
     #"blade-power-log-cli",
