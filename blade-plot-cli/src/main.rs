@@ -63,7 +63,7 @@ fn main() -> Result<(), bincode::Error> {
     .init();
     let opts = Opts::from_args();
     let running = Arc::new(AtomicUsize::new(0));
-    let r = running;
+    let r = running.clone();
     ctrlc::set_handler(move || {
         let prev = r.fetch_add(1, Ordering::SeqCst);
         if prev == 0 {
@@ -75,6 +75,7 @@ fn main() -> Result<(), bincode::Error> {
     })
     .expect("Error setting Ctrl-C handler");
 
+    let channel = Channel::Rx0;
     let channel_layout = ChannelLayout::RxX1;
     let format = Format::Sc16Q11Meta;
     let num_buffers = 32;
@@ -110,7 +111,6 @@ fn main() -> Result<(), bincode::Error> {
     );
 
     // TODO - use BinnedFrequencyRange, show the center freq of the bin
-    //let freq_range = BinnedFrequencyRange::new(r, opts.bandwidth).unwrap();
     let freq_bins: Vec<f64> = (0..fft_num_bins)
         .map(|index| freq_start + (index as f64 * freq_step))
         .collect();
@@ -131,8 +131,6 @@ fn main() -> Result<(), bincode::Error> {
         .map_err(|e| log::error!("Device::device_speed returned {:?}", e))
         .unwrap();
     log::info!("Device speed: {}", speed);
-
-    let channel = Channel::Rx0;
 
     log::info!("Channel: {}", channel);
 
@@ -241,7 +239,13 @@ fn main() -> Result<(), bincode::Error> {
 
         let mut cc = ChartBuilder::on(&root)
             .margin(10)
-            .caption("BladeRF Plot", ("sans-serif", 30).into_font())
+            .caption(
+                format!(
+                    "FFT,avg={},num_bins={},center={}",
+                    filter_width, fft_num_bins, opts.frequency
+                ),
+                ("sans-serif", 30).into_font(),
+            )
             .x_label_area_size(40)
             .y_label_area_size(50)
             .build_ranged(0..fft_num_bins, -100.1_f64..0.0_f64)?;
@@ -260,19 +264,13 @@ fn main() -> Result<(), bincode::Error> {
             (0..).zip(plot_data.iter()).map(|(a, b)| (a, *b)),
             &Palette99::pick(0),
         ))?;
-        //.label(format!("FFT,avg={}", filter_width))
-        //.legend(move |(x, y)| {
-        //    Rectangle::new([(x - 5, y - 5), (x + 5, y + 5)], &Palette99::pick(0))
-        //});
-
-        // Legend/labels
-        //cc.configure_series_labels()
-        //    .background_style(&WHITE.mix(0.8))
-        //    .border_style(&BLACK)
-        //    .draw()?;
 
         Ok(())
-    }) {}
+    }) {
+        if running.load(Ordering::SeqCst) != 0 {
+            break;
+        }
+    }
 
     let mut dev = device.into_inner();
 
