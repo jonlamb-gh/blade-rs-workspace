@@ -1,4 +1,4 @@
-use dsp::{normalize_sc16_q11, num_complex::Complex};
+use crate::{normalize_sc16_q11, num_complex::Complex};
 
 pub struct ComplexStorage {
     buffer: Vec<Complex<f64>>,
@@ -15,6 +15,10 @@ impl ComplexStorage {
         self.buffer.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
     // Samples.len() must be a multiple of 2, converts I/Q pair to complex
     pub fn push_normalize_sc16_q11(&mut self, samples: &[i16]) {
         debug_assert!(samples.len() % 2 == 0);
@@ -22,6 +26,10 @@ impl ComplexStorage {
             let (i, q) = (normalize_sc16_q11(pair[0]), normalize_sc16_q11(pair[1]));
             self.buffer.push(Complex::new(i, q));
         });
+    }
+
+    pub fn buffer(&mut self) -> &[Complex<f64>] {
+        &self.buffer
     }
 
     pub fn buffer_mut(&mut self) -> &mut [Complex<f64>] {
@@ -46,7 +54,7 @@ mod tests {
         s.drain(2);
         assert_eq!(s.len(), 1);
         assert_eq!(
-            s.buffer_mut(),
+            s.buffer(),
             &[Complex::new(normalize_sc16_q11(5), normalize_sc16_q11(6))]
         );
     }

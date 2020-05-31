@@ -1,5 +1,7 @@
 # BladeRF Rust Workspace
 
+* [BladeRF-xA4](https://www.nuand.com/product/bladeRF-xA4/)
+
 Check out these:
 * http://kmkeen.com/rtl-power/
 * https://crates.io/crates/sdr-heatmap

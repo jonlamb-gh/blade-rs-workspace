@@ -196,7 +196,6 @@ dependencies = [
 name = "blade-plot-cli"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "ctrlc",
  "dsp",
  "env_logger",
@@ -550,7 +549,9 @@ dependencies = [
 name = "dsp"
 version = "0.1.0"
 dependencies = [
+ "hertz",
  "libbladerf-sys",
+ "log",
  "median",
  "rustfft",
 ]
@@ -881,6 +882,12 @@ checksum = "91780f809e750b0a89f5544be56617ff6b1227ee485bcb06ebe10cdf89bd3b71"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "hertz"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e572f8a4e164332d3b1929175e5ae71f42f967092cfd27112decf26f6c3918c"
 
 [[package]]
 name = "humantime"

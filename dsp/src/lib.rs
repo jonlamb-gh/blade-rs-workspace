@@ -2,13 +2,20 @@
 // https://github.com/signalo/signalo
 
 pub use binned_frequency_range::BinnedFrequencyRange;
+pub use complex_storage::ComplexStorage;
+pub use device_limits::{DeviceLimits, LimitsError};
+pub use device_reader::DeviceReader;
 pub use filter::Filter;
+pub use hertz;
 pub use median;
 pub use rustfft::num_traits::{clamp, clamp_max, clamp_min};
 pub use rustfft::{self, num_complex, num_traits};
 pub use vecops::VecOps;
 
 mod binned_frequency_range;
+mod complex_storage;
+mod device_limits;
+mod device_reader;
 mod filter;
 mod vecops;
 

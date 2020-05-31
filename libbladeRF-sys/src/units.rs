@@ -212,9 +212,12 @@ impl fmt::Display for MegaHertz {
 
 pub const ONE_KHZ: Hertz = Hertz(1_000);
 pub const ONE_MHZ: Hertz = Hertz(1_000_000);
+pub const ONE_GHZ: Hertz = Hertz(1_000_000_000);
 
 fn pretty_fmt(h: Hertz, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    if h.0 >= ONE_MHZ.0 {
+    if h.0 >= ONE_GHZ.0 {
+        write!(f, "{:.04} GHz", h.as_f64() / ONE_GHZ.as_f64())
+    } else if h.0 >= ONE_MHZ.0 {
         write!(f, "{:.04} MHz", h.as_f64() / ONE_MHZ.as_f64())
     } else if h.0 >= ONE_KHZ.0 {
         write!(f, "{:.04} KHz", h.as_f64() / ONE_KHZ.as_f64())

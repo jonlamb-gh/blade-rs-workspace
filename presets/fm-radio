@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+export BLADELOG_FREQUENCY="89500K"
+export BLADELOG_SAMPLE_RATE="2000000"
+export BLADELOG_BANDWIDTH="1500K"

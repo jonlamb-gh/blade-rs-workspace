@@ -35,6 +35,17 @@ pub type Frequency = Hertz;
 pub type Bandwidth = Hertz;
 pub type SampleRate = Sps;
 
+// BladeRF 2.0 micro xA4 limits
+pub mod device_limits {
+    use super::{Hertz, Sps};
+    pub const FREQUENCY_MIN: Hertz = Hertz(70_000_000);
+    pub const FREQUENCY_MAX: Hertz = Hertz(6_000_000_000);
+    pub const BANDWIDTH_MIN: Hertz = Hertz(200_000);
+    pub const BANDWIDTH_MAX: Hertz = Hertz(56_000_000);
+    pub const SAMPLE_RATE_MIN: Sps = Sps(1);
+    pub const SAMPLE_RATE_MAX: Sps = Sps(61_440_000);
+}
+
 pub const SAMPLES_PER_BUFFER: usize = 1024;
 pub const I16_PER_SAMPLE: usize = 2;
 

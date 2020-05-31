@@ -1,8 +1,6 @@
-use crate::complex_storage::ComplexStorage;
-use crate::device_reader::DeviceReader;
 use dsp::{
-    median::Filter as MedianFilter, num_complex::Complex, num_traits::Zero, rustfft::FFTplanner,
-    Filter, VecOps,
+    hertz, median::Filter as MedianFilter, num_complex::Complex, num_traits::Zero,
+    rustfft::FFTplanner, ComplexStorage, DeviceLimits, DeviceReader, Filter, VecOps,
 };
 use libbladerf_sys::*;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
@@ -13,8 +11,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
 
-mod complex_storage;
-mod device_reader;
+// TODO
+// - reference level (dB), -10 default
+// - range (dB), 90 default
+// - num samples average, 10 default
+// - plot mode, rms power, dB, amplitude
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "blade-plot", about = "BladeRF plotting")]
@@ -54,9 +55,13 @@ pub struct Opts {
     /// * MegaHertz: <num>M | <num>m
     #[structopt(short = "b", long, parse(try_from_str = Hertz::from_str), env = "BLADELOG_BANDWIDTH")]
     bandwidth: Hertz,
+
+    /// Print info and exit
+    #[structopt(long)]
+    dry_run: bool,
 }
 
-fn main() -> Result<(), bincode::Error> {
+fn main() -> Result<(), std::io::Error> {
     env_logger::from_env(
         env_logger::Env::default().default_filter_or("info,gfx_device_gl=warn,winit=warn"),
     )
@@ -104,16 +109,44 @@ fn main() -> Result<(), bincode::Error> {
     let center_freq_mhz = opts.frequency.as_f64() / units::ONE_MHZ.as_f64();
     let freq_start = center_freq_mhz - (bandwidth_mhz / 2.0);
     let freq_step = bandwidth_mhz / (fft_num_bins as f64);
+
+    // TODO - use BinnedFrequencyRange, show the center freq of the bin
+    let freq_bins: Vec<f64> = (0..fft_num_bins)
+        .map(|index| freq_start + (index as f64 * freq_step))
+        .collect();
+
+    log::info!("Channel: {}", channel);
+    log::info!("Frequency: {}", opts.frequency);
+    log::info!("Sample rate: {}", opts.sample_rate);
+    log::info!("Bandwidth: {}", opts.bandwidth);
+    log::info!("Channel layout: {}", channel_layout);
+    log::info!("Format: {}", format);
     log::info!(
         "FFT bin size {:.02} Hz ({} bins)",
         bandwidth / (fft_num_bins as f64),
         fft_num_bins
     );
 
-    // TODO - use BinnedFrequencyRange, show the center freq of the bin
-    let freq_bins: Vec<f64> = (0..fft_num_bins)
-        .map(|index| freq_start + (index as f64 * freq_step))
-        .collect();
+    let rayleigh = hertz::rayleigh(opts.sample_rate.as_f64(), fft_num_bins as f64);
+    log::info!(
+        "Rayleigh, min frequency (window size = {}): {:.01} Hz",
+        fft_num_bins,
+        rayleigh
+    );
+
+    let nyquist = hertz::nyquist(opts.sample_rate.as_f64());
+    log::info!(
+        "Nyquist, max frequency: {:.03} MHz",
+        nyquist / units::ONE_MHZ.as_f64()
+    );
+
+    DeviceLimits::check(opts.frequency, opts.bandwidth, opts.sample_rate)
+        .map_err(|e| log::error!("DeviceLimits::check returned {:?}", e))
+        .unwrap();
+
+    if opts.dry_run {
+        return Ok(());
+    }
 
     log::info!("Opening device ID '{}'", opts.device_id);
     let mut dev = Device::open(&opts.device_id)
@@ -132,18 +165,14 @@ fn main() -> Result<(), bincode::Error> {
         .unwrap();
     log::info!("Device speed: {}", speed);
 
-    log::info!("Channel: {}", channel);
-
     dev.enable_module(channel, false)
         .map_err(|e| log::error!("Device::enable_module returned {:?}", e))
         .unwrap();
 
-    log::info!("Frequency: {}", opts.frequency);
     dev.set_frequency(channel, opts.frequency)
         .map_err(|e| log::error!("Device::set_frequency returned {:?}", e))
         .unwrap();
 
-    log::info!("Sample rate: {}", opts.sample_rate);
     let actual_sample_rate = dev
         .set_sample_rate(channel, opts.sample_rate)
         .map_err(|e| log::error!("Device::set_sample_rate returned {:?}", e))
@@ -152,7 +181,6 @@ fn main() -> Result<(), bincode::Error> {
         log::warn!("Actual sample rate: {}", actual_sample_rate);
     }
 
-    log::info!("Bandwidth: {}", opts.bandwidth);
     let actual_bandwidth = dev
         .set_bandwidth(channel, opts.bandwidth)
         .map_err(|e| log::error!("Device::set_bandwidth returned {:?}", e))
@@ -167,8 +195,6 @@ fn main() -> Result<(), bincode::Error> {
         .unwrap();
     window.set_max_fps(60);
 
-    log::info!("Channel layout: {}", channel_layout);
-    log::info!("Format: {}", format);
     dev.sync_config(
         channel_layout,
         format,
@@ -179,12 +205,6 @@ fn main() -> Result<(), bincode::Error> {
     )
     .map_err(|e| log::error!("Device::sync_config returned {:?}", e))
     .unwrap();
-
-    log::info!(
-        "FFT bin size {:.02} Hz ({} bins)",
-        bandwidth / (fft_num_bins as f64),
-        fft_num_bins
-    );
 
     dev.enable_module(channel, true)
         .map_err(|e| log::error!("Device::enable_module returned {:?}", e))

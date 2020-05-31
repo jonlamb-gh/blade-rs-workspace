@@ -5,8 +5,10 @@ authors = ["Jon Lamb"]
 edition = "2018"
 
 [dependencies]
+log = "0.4"
 rustfft = "3.0"
 median = "0.3"
+hertz = "0.3"
 
 [dependencies.libbladerf-sys]
 path = "../libbladeRF-sys"
