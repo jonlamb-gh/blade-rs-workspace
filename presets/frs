@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+# https://en.wikipedia.org/wiki/Family_Radio_Service
+
+# Channel 17
+export BLADELOG_FREQUENCY="462600K"
+export BLADELOG_SAMPLE_RATE="2000000"
+export BLADELOG_BANDWIDTH="1500K"

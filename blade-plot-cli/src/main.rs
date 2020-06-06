@@ -1,10 +1,15 @@
 use dsp::{
-    hertz, median::Filter as MedianFilter, num_complex::Complex, num_traits::Zero,
-    rustfft::FFTplanner, ComplexStorage, DeviceLimits, DeviceReader, Filter, VecOps,
+    hertz,
+    median::Filter as MedianFilter,
+    num_complex::Complex,
+    num_traits::Zero,
+    rustfft::{FFTplanner, FFT},
+    sample_to_power, ComplexStorage, DeviceLimits, DeviceReader, Filter, VecOps,
 };
 use libbladerf_sys::*;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::prelude::*;
+use std::io;
 use std::process;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -14,10 +19,9 @@ use structopt::StructOpt;
 // TODO
 // - reference level (dB), -10 default
 // - range (dB), 90 default
-// - num samples average, 10 default
 // - plot mode, rms power, dB, amplitude
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Clone, StructOpt)]
 #[structopt(name = "blade-plot", about = "BladeRF plotting")]
 pub struct Opts {
     /// BladeRF device ID.
@@ -59,9 +63,234 @@ pub struct Opts {
     /// Print info and exit
     #[structopt(long)]
     dry_run: bool,
+
+    /// Plot mode
+    #[structopt(short = "p", long, parse(try_from_str = PlotMode::from_str), default_value = "fft")]
+    plot_mode: PlotMode,
+
+    /// Number of bins in the FFT
+    #[structopt(long, default_value = "2048")]
+    fft_bins: usize,
+
+    /// Size (width) of the median average filter
+    #[structopt(long, default_value = "10")]
+    avg_window_width: usize,
 }
 
-fn main() -> Result<(), std::io::Error> {
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum PlotMode {
+    /// Run I/Q data through an FFT, plot in dB
+    Fft,
+    /// Run I/Q data through a median average filter, plot RMS power
+    RmsPower,
+}
+
+#[derive(Debug)]
+pub struct UnsupportedPlotMode(String);
+
+impl ToString for UnsupportedPlotMode {
+    fn to_string(&self) -> String {
+        format!("{:?}", self)
+    }
+}
+
+impl FromStr for PlotMode {
+    type Err = UnsupportedPlotMode;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.to_lowercase();
+        match s.trim() {
+            "fft" => Ok(PlotMode::Fft),
+            "rms-power" => Ok(PlotMode::RmsPower),
+            _ => Err(UnsupportedPlotMode(s)),
+        }
+    }
+}
+
+pub struct FftPlot {
+    opts: Opts,
+    device: DeviceReader,
+    freq_bins: Vec<f64>,
+    complex_storage: ComplexStorage,
+    complex_samples: Vec<Complex<f64>>,
+    fft: Arc<dyn FFT<f64>>,
+    filters: Vec<MedianFilter<f64>>,
+}
+
+impl FftPlot {
+    pub fn new(opts: Opts, device: DeviceReader, initial_capacity: usize) -> Self {
+        let fft_bins = opts.fft_bins;
+        let avg_window_width = opts.avg_window_width;
+
+        let mut planner = FFTplanner::new(false);
+        let fft = planner.plan_fft(fft_bins);
+
+        let bandwidth = opts.bandwidth.as_f64();
+        let bandwidth_mhz = bandwidth / units::ONE_MHZ.as_f64();
+        let center_freq_mhz = opts.frequency.as_f64() / units::ONE_MHZ.as_f64();
+        let freq_start = center_freq_mhz - (bandwidth_mhz / 2.0);
+        let freq_step = bandwidth_mhz / (opts.fft_bins as f64);
+
+        // TODO - use BinnedFrequencyRange, show the center freq of the bin
+        let freq_bins: Vec<f64> = (0..opts.fft_bins)
+            .map(|index| freq_start + (index as f64 * freq_step))
+            .collect();
+
+        FftPlot {
+            opts,
+            device,
+            freq_bins,
+            complex_storage: ComplexStorage::new(initial_capacity),
+            complex_samples: vec![Complex::zero(); fft_bins],
+            fft,
+            filters: vec![MedianFilter::new(avg_window_width); fft_bins],
+        }
+    }
+
+    pub fn into_inner(self) -> Device {
+        self.device.into_inner()
+    }
+
+    pub fn device_mut(&mut self) -> &mut Device {
+        self.device.device_mut()
+    }
+
+    // Returns true when plot data is updated and should be redrawn
+    pub fn process(&mut self, plot_data: &mut [f64]) -> Result<bool, io::Error> {
+        debug_assert_eq!(plot_data.len(), self.complex_samples.len());
+
+        if let Some(samples) = self.device.read() {
+            self.complex_storage.push_normalize_sc16_q11(samples);
+        }
+
+        if self.complex_storage.len() < self.opts.fft_bins {
+            log::warn!(
+                "Not enough samples to process - continue {} {}",
+                self.complex_storage.len(),
+                self.opts.fft_bins
+            );
+            return Ok(false);
+        }
+
+        let mut proc_counter: u64 = 0;
+        while self.complex_storage.len() > self.opts.fft_bins {
+            debug_assert_eq!(self.complex_samples.len(), self.opts.fft_bins);
+
+            // Ordered by ascending frequency, with the first
+            // element corresponding to frequency 0
+            self.fft.process(
+                &mut self.complex_storage.buffer_mut()[..self.opts.fft_bins],
+                &mut self.complex_samples,
+            );
+            self.complex_storage.drain(self.opts.fft_bins);
+
+            // TODO - scale and offset tweaks
+            let scale = 1_f64 / self.opts.fft_bins as f64;
+            //let scale = (1_f64 / num_iq_pairs as f64).sqrt();
+
+            self.complex_samples.vec_scale(scale);
+
+            self.complex_samples.vec_mirror();
+
+            self.complex_samples
+                .iter()
+                .zip(plot_data.iter_mut())
+                .for_each(|(s, d)| *d = sample_to_db(s));
+
+            apply_filter(&mut self.filters, plot_data);
+
+            proc_counter = proc_counter.wrapping_add(1);
+        }
+
+        if proc_counter > 4 {
+            log::warn!("Processed {} FFT windows before rendering", proc_counter);
+        }
+
+        Ok(true)
+    }
+
+    pub fn draw(
+        &mut self,
+        b: PistonBackend,
+        plot_data: &[f64],
+    ) -> Result<(), DrawingAreaErrorKind<DummyBackendError>> {
+        let root = b.into_drawing_area();
+        root.fill(&WHITE)?;
+
+        let mut cc = ChartBuilder::on(&root)
+            .margin(10)
+            .caption(
+                format!(
+                    "FFT,avg={},num_bins={},center={}",
+                    self.opts.avg_window_width, self.opts.fft_bins, self.opts.frequency
+                ),
+                ("sans-serif", 30).into_font(),
+            )
+            .x_label_area_size(40)
+            .y_label_area_size(50)
+            .build_ranged(0..self.opts.fft_bins, -100.1_f64..0.0_f64)?;
+
+        cc.configure_mesh()
+            .x_label_formatter(&|x| format!("{:.02} MHz", self.freq_bins[*x]))
+            //.y_label_formatter(&|y| format!("{}%", (*y * 100.0) as u32))
+            .x_labels(16)
+            .y_labels(20)
+            .x_desc("Frequency")
+            .y_desc("dB")
+            .axis_desc_style(("sans-serif", 15).into_font())
+            .draw()?;
+
+        cc.draw_series(LineSeries::new(
+            (0..).zip(plot_data.iter()).map(|(a, b)| (a, *b)),
+            &Palette99::pick(0),
+        ))?;
+
+        Ok(())
+    }
+}
+
+// TODO - downsample
+pub struct RmsPowerPlot {
+    opts: Opts,
+    device: DeviceReader,
+    complex_storage: ComplexStorage,
+    filter: MedianFilter<f64>,
+}
+
+impl RmsPowerPlot {
+    pub fn new(opts: Opts, device: DeviceReader, initial_capacity: usize) -> Self {
+        let avg_window_width = opts.avg_window_width;
+        RmsPowerPlot {
+            opts,
+            device,
+            complex_storage: ComplexStorage::new(initial_capacity),
+            filter: MedianFilter::new(avg_window_width),
+        }
+    }
+
+    pub fn into_inner(self) -> Device {
+        self.device.into_inner()
+    }
+
+    pub fn device_mut(&mut self) -> &mut Device {
+        self.device.device_mut()
+    }
+
+    // Returns true when plot data is updated and should be redrawn
+    pub fn process(&mut self, plot_data: &mut [f64]) -> Result<bool, io::Error> {
+        debug_assert_eq!(plot_data.len(), self.filter.len());
+
+        if let Some(samples) = self.device.read() {
+            self.complex_storage.push_normalize_sc16_q11(samples);
+        }
+
+        // TODO
+
+        Ok(true)
+    }
+}
+
+fn main() -> Result<(), io::Error> {
     env_logger::from_env(
         env_logger::Env::default().default_filter_or("info,gfx_device_gl=warn,winit=warn"),
     )
@@ -89,31 +318,8 @@ fn main() -> Result<(), std::io::Error> {
     let num_transfers = 16;
     let timeout_ms = 1000_u32.ms();
 
-    let fft_num_bins = 4096 / 2;
-    assert!(samples_per_buffer % fft_num_bins == 0);
-    assert!(fft_num_bins % 2 == 0);
-
-    let mut complex_storage = ComplexStorage::new(iq_pairs_per_buffer);
-
-    let mut planner = FFTplanner::new(false);
-    let fft = planner.plan_fft(fft_num_bins);
-
-    let mut complex_samples: Vec<Complex<f64>> = vec![Complex::zero(); fft_num_bins];
-    let mut plot_data = vec![0_f64; fft_num_bins];
-
-    let filter_width = 10;
-    let mut filters: Vec<MedianFilter<f64>> = vec![MedianFilter::new(filter_width); fft_num_bins];
-
-    let bandwidth = opts.bandwidth.as_f64();
-    let bandwidth_mhz = bandwidth / units::ONE_MHZ.as_f64();
-    let center_freq_mhz = opts.frequency.as_f64() / units::ONE_MHZ.as_f64();
-    let freq_start = center_freq_mhz - (bandwidth_mhz / 2.0);
-    let freq_step = bandwidth_mhz / (fft_num_bins as f64);
-
-    // TODO - use BinnedFrequencyRange, show the center freq of the bin
-    let freq_bins: Vec<f64> = (0..fft_num_bins)
-        .map(|index| freq_start + (index as f64 * freq_step))
-        .collect();
+    assert!(samples_per_buffer % opts.fft_bins == 0);
+    assert!(opts.fft_bins % 2 == 0);
 
     log::info!("Channel: {}", channel);
     log::info!("Frequency: {}", opts.frequency);
@@ -123,14 +329,14 @@ fn main() -> Result<(), std::io::Error> {
     log::info!("Format: {}", format);
     log::info!(
         "FFT bin size {:.02} Hz ({} bins)",
-        bandwidth / (fft_num_bins as f64),
-        fft_num_bins
+        opts.bandwidth.as_f64() / (opts.fft_bins as f64),
+        opts.fft_bins
     );
 
-    let rayleigh = hertz::rayleigh(opts.sample_rate.as_f64(), fft_num_bins as f64);
+    let rayleigh = hertz::rayleigh(opts.sample_rate.as_f64(), opts.fft_bins as f64);
     log::info!(
         "Rayleigh, min frequency (window size = {}): {:.01} Hz",
-        fft_num_bins,
+        opts.fft_bins,
         rayleigh
     );
 
@@ -189,102 +395,42 @@ fn main() -> Result<(), std::io::Error> {
         log::warn!("Actual bandwidth: {}", actual_bandwidth);
     }
 
+    let mut plot_data = vec![0_f64; opts.fft_bins];
+    let mut plot = FftPlot::new(
+        opts.clone(),
+        DeviceReader::new(dev, samples_per_buffer),
+        iq_pairs_per_buffer,
+    );
+
     let mut window: PistonWindow = WindowSettings::new("BladeRF Plot", [640, 480])
         .samples(4) // Anti-aliasing
         .build()
         .unwrap();
     window.set_max_fps(60);
 
-    dev.sync_config(
-        channel_layout,
-        format,
-        num_buffers,
-        samples_per_buffer,
-        num_transfers,
-        timeout_ms,
-    )
-    .map_err(|e| log::error!("Device::sync_config returned {:?}", e))
-    .unwrap();
+    plot.device_mut()
+        .sync_config(
+            channel_layout,
+            format,
+            num_buffers,
+            samples_per_buffer,
+            num_transfers,
+            timeout_ms,
+        )
+        .map_err(|e| log::error!("Device::sync_config returned {:?}", e))
+        .unwrap();
 
-    dev.enable_module(channel, true)
+    plot.device_mut()
+        .enable_module(channel, true)
         .map_err(|e| log::error!("Device::enable_module returned {:?}", e))
         .unwrap();
     log::info!("Channel {} is active", channel);
 
-    let mut device = DeviceReader::new(dev, samples_per_buffer);
-
     while let Some(_) = draw_piston_window(&mut window, |b| {
-        if let Some(samples) = device.read() {
-            complex_storage.push_normalize_sc16_q11(samples);
+        let redraw = plot.process(&mut plot_data)?;
+        if redraw {
+            plot.draw(b, &plot_data)?;
         }
-
-        if complex_storage.len() < fft_num_bins {
-            log::warn!(
-                "Not enough samples to process - continue {} {}",
-                complex_storage.len(),
-                fft_num_bins
-            );
-            return Ok(());
-        }
-
-        while complex_storage.len() > fft_num_bins {
-            debug_assert_eq!(complex_samples.len(), fft_num_bins);
-
-            // Ordered by ascending frequency, with the first
-            // element corresponding to frequency 0
-            fft.process(
-                &mut complex_storage.buffer_mut()[..fft_num_bins],
-                &mut complex_samples,
-            );
-            complex_storage.drain(fft_num_bins);
-
-            // TODO - scale and offset tweaks
-            let scale = 1_f64 / fft_num_bins as f64;
-            //let scale = (1_f64 / num_iq_pairs as f64).sqrt();
-
-            complex_samples.vec_scale(scale);
-
-            complex_samples.vec_mirror();
-
-            complex_samples
-                .iter()
-                .zip(plot_data.iter_mut())
-                .for_each(|(s, d)| *d = sample_to_db(s));
-
-            apply_filter(&mut filters, &mut plot_data);
-        }
-
-        let root = b.into_drawing_area();
-        root.fill(&WHITE)?;
-
-        let mut cc = ChartBuilder::on(&root)
-            .margin(10)
-            .caption(
-                format!(
-                    "FFT,avg={},num_bins={},center={}",
-                    filter_width, fft_num_bins, opts.frequency
-                ),
-                ("sans-serif", 30).into_font(),
-            )
-            .x_label_area_size(40)
-            .y_label_area_size(50)
-            .build_ranged(0..fft_num_bins, -100.1_f64..0.0_f64)?;
-
-        cc.configure_mesh()
-            .x_label_formatter(&|x| format!("{:.02} MHz", freq_bins[*x]))
-            //.y_label_formatter(&|y| format!("{}%", (*y * 100.0) as u32))
-            .x_labels(16)
-            .y_labels(20)
-            .x_desc("Frequency")
-            .y_desc("dB")
-            .axis_desc_style(("sans-serif", 15).into_font())
-            .draw()?;
-
-        cc.draw_series(LineSeries::new(
-            (0..).zip(plot_data.iter()).map(|(a, b)| (a, *b)),
-            &Palette99::pick(0),
-        ))?;
-
         Ok(())
     }) {
         if running.load(Ordering::SeqCst) != 0 {
@@ -292,7 +438,7 @@ fn main() -> Result<(), std::io::Error> {
         }
     }
 
-    let mut dev = device.into_inner();
+    let mut dev = plot.into_inner();
 
     log::info!("Closing device");
 
@@ -316,11 +462,6 @@ where
 }
 
 fn sample_to_db(s: &Complex<f64>) -> f64 {
-    let power = s.norm_sqr();
+    let power = sample_to_power(s);
     10.0 * power.log(10.0)
 }
-
-//fn sample_to_amplitude(s: &Complex<f64>) -> f64 {
-//    let power = s.norm_sqr();
-//    power.sqrt()
-//}

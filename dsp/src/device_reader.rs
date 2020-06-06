@@ -20,6 +20,10 @@ impl DeviceReader {
         self.dev
     }
 
+    pub fn device_mut(&mut self) -> &mut Device {
+        &mut self.dev
+    }
+
     pub fn read(&mut self) -> Option<&[i16]> {
         let timeout_ms = 10_u32.ms();
         let mut metadata = Metadata::new_rx_now();

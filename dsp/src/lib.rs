@@ -12,6 +12,9 @@ pub use rustfft::num_traits::{clamp, clamp_max, clamp_min};
 pub use rustfft::{self, num_complex, num_traits};
 pub use vecops::VecOps;
 
+use crate::num_complex::Complex;
+use crate::num_traits::Num;
+
 mod binned_frequency_range;
 mod complex_storage;
 mod device_limits;
@@ -44,4 +47,10 @@ where
     dst.iter_mut()
         .enumerate()
         .for_each(|(i, c)| *c = src[i * dec]);
+}
+
+// dB = 10.0 * power.log(10.0)
+// amplitude = power.sqrt()
+pub fn sample_to_power<T: Clone + Num>(s: &Complex<T>) -> T {
+    s.norm_sqr()
 }
