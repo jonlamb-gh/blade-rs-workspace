@@ -1,5 +1,6 @@
 use crate::{normalize_sc16_q11, num_complex::Complex};
 
+// TODO - VecDeque
 pub struct ComplexStorage {
     buffer: Vec<Complex<f64>>,
 }

@@ -9,6 +9,7 @@ use dsp::{
 use libbladerf_sys::*;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
 use plotters::prelude::*;
+use std::collections::vec_deque::VecDeque;
 use std::io;
 use std::process;
 use std::str::FromStr;
@@ -115,6 +116,7 @@ pub struct FftPlot {
     complex_samples: Vec<Complex<f64>>,
     fft: Arc<dyn FFT<f64>>,
     filters: Vec<MedianFilter<f64>>,
+    plot_data: Vec<f64>,
 }
 
 impl FftPlot {
@@ -144,6 +146,7 @@ impl FftPlot {
             complex_samples: vec![Complex::zero(); fft_bins],
             fft,
             filters: vec![MedianFilter::new(avg_window_width); fft_bins],
+            plot_data: vec![0_f64; fft_bins],
         }
     }
 
@@ -156,8 +159,8 @@ impl FftPlot {
     }
 
     // Returns true when plot data is updated and should be redrawn
-    pub fn process(&mut self, plot_data: &mut [f64]) -> Result<bool, io::Error> {
-        debug_assert_eq!(plot_data.len(), self.complex_samples.len());
+    pub fn process(&mut self) -> Result<bool, io::Error> {
+        debug_assert_eq!(self.plot_data.len(), self.complex_samples.len());
 
         if let Some(samples) = self.device.read() {
             self.complex_storage.push_normalize_sc16_q11(samples);
@@ -194,10 +197,10 @@ impl FftPlot {
 
             self.complex_samples
                 .iter()
-                .zip(plot_data.iter_mut())
+                .zip(self.plot_data.iter_mut())
                 .for_each(|(s, d)| *d = sample_to_db(s));
 
-            apply_filter(&mut self.filters, plot_data);
+            apply_filter(&mut self.filters, &mut self.plot_data);
 
             proc_counter = proc_counter.wrapping_add(1);
         }
@@ -212,7 +215,6 @@ impl FftPlot {
     pub fn draw(
         &mut self,
         b: PistonBackend,
-        plot_data: &[f64],
     ) -> Result<(), DrawingAreaErrorKind<DummyBackendError>> {
         let root = b.into_drawing_area();
         root.fill(&WHITE)?;
@@ -241,7 +243,7 @@ impl FftPlot {
             .draw()?;
 
         cc.draw_series(LineSeries::new(
-            (0..).zip(plot_data.iter()).map(|(a, b)| (a, *b)),
+            (0..).zip(self.plot_data.iter()).map(|(a, b)| (a, *b)),
             &Palette99::pick(0),
         ))?;
 
@@ -253,18 +255,34 @@ impl FftPlot {
 pub struct RmsPowerPlot {
     opts: Opts,
     device: DeviceReader,
+    plot_width: usize,
+    filter_width_sec: f64,
     complex_storage: ComplexStorage,
     filter: MedianFilter<f64>,
+    plot_data: VecDeque<f64>,
 }
 
 impl RmsPowerPlot {
     pub fn new(opts: Opts, device: DeviceReader, initial_capacity: usize) -> Self {
         let avg_window_width = opts.avg_window_width;
+        let plot_width = 4096 * 2; // TODO - config
+
+        // TODO - this isn't correct
+        let filter_width_sec = avg_window_width as f64 / (opts.sample_rate.as_f64() / 8.0);
+        log::info!(
+            "RMS power filter width: {:.03} ms, total time {:.03} s",
+            filter_width_sec * 1000.0,
+            plot_width as f64 * filter_width_sec
+        );
+
         RmsPowerPlot {
             opts,
             device,
+            plot_width,
+            filter_width_sec,
             complex_storage: ComplexStorage::new(initial_capacity),
             filter: MedianFilter::new(avg_window_width),
+            plot_data: VecDeque::from(vec![0_f64; plot_width]),
         }
     }
 
@@ -277,16 +295,92 @@ impl RmsPowerPlot {
     }
 
     // Returns true when plot data is updated and should be redrawn
-    pub fn process(&mut self, plot_data: &mut [f64]) -> Result<bool, io::Error> {
-        debug_assert_eq!(plot_data.len(), self.filter.len());
-
+    pub fn process(&mut self) -> Result<bool, io::Error> {
         if let Some(samples) = self.device.read() {
+            // TODO - downsample
             self.complex_storage.push_normalize_sc16_q11(samples);
         }
 
-        // TODO
+        if self.complex_storage.len() < self.filter.len() {
+            log::warn!(
+                "Not enough samples to process - continue {} {}",
+                self.complex_storage.len(),
+                self.filter.len()
+            );
+            return Ok(false);
+        }
+
+        // TODO - fix this filtering
+        let mut proc_counter: u64 = 0;
+        while self.complex_storage.len() > self.filter.len() {
+            for s in self.complex_storage.buffer()[..self.filter.len()].iter() {
+                self.filter.consume(sample_to_power(s));
+            }
+            self.complex_storage.drain(self.filter.len());
+
+            if self.plot_data.len() == self.plot_width + 1 {
+                self.plot_data.pop_front();
+            }
+            self.plot_data.push_back(self.filter.median());
+
+            proc_counter = proc_counter.wrapping_add(1);
+
+            if proc_counter > (self.plot_width as u64 / 16) {
+                // TODO
+                log::warn!("break: remain {}", self.complex_storage.len());
+                break;
+            }
+        }
 
         Ok(true)
+    }
+
+    pub fn draw(
+        &mut self,
+        b: PistonBackend,
+    ) -> Result<(), DrawingAreaErrorKind<DummyBackendError>> {
+        let root = b.into_drawing_area();
+        root.fill(&WHITE)?;
+
+        let mut cc = ChartBuilder::on(&root)
+            .margin(10)
+            .caption(
+                format!(
+                    "width={},center={},t_n={:.03} ms, t_total={:.03} s",
+                    self.plot_width,
+                    self.opts.frequency,
+                    self.filter_width_sec * 1000.0,
+                    self.plot_width as f64 * self.filter_width_sec
+                ),
+                ("sans-serif", 30).into_font(),
+            )
+            .x_label_area_size(40)
+            .y_label_area_size(50)
+            .build_ranged(0..self.plot_width, 0_f64..1.0_f64)?;
+
+        cc.configure_mesh()
+            .x_label_formatter(&|x| {
+                format!(
+                    "{:.03}",
+                    -(self.plot_width as f64 * self.filter_width_sec)
+                        + (*x as f64 * self.filter_width_sec)
+                )
+            })
+            //.x_label_formatter(&|x| format!("{}", *x))
+            //.y_label_formatter(&|y| format!("{}%", (*y * 100.0) as u32))
+            .x_labels(16)
+            .y_labels(20)
+            .x_desc("Time (seconds)")
+            .y_desc("Power")
+            .axis_desc_style(("sans-serif", 15).into_font())
+            .draw()?;
+
+        cc.draw_series(LineSeries::new(
+            (0..).zip(self.plot_data.iter()).map(|(a, b)| (a, *b)),
+            &Palette99::pick(0),
+        ))?;
+
+        Ok(())
     }
 }
 
@@ -395,8 +489,8 @@ fn main() -> Result<(), io::Error> {
         log::warn!("Actual bandwidth: {}", actual_bandwidth);
     }
 
-    let mut plot_data = vec![0_f64; opts.fft_bins];
-    let mut plot = FftPlot::new(
+    //let mut plot = FftPlot::new(
+    let mut plot = RmsPowerPlot::new(
         opts.clone(),
         DeviceReader::new(dev, samples_per_buffer),
         iq_pairs_per_buffer,
@@ -427,9 +521,9 @@ fn main() -> Result<(), io::Error> {
     log::info!("Channel {} is active", channel);
 
     while let Some(_) = draw_piston_window(&mut window, |b| {
-        let redraw = plot.process(&mut plot_data)?;
+        let redraw = plot.process()?;
         if redraw {
-            plot.draw(b, &plot_data)?;
+            plot.draw(b)?;
         }
         Ok(())
     }) {
