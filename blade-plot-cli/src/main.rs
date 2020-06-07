@@ -100,12 +100,13 @@ pub struct RmsPowerOpts {
     #[structopt(long, default_value = "8192")]
     plot_width: usize,
 
+    // TODO
+    //#[structopt(long, default_value = "8")]
     /// Downsample decimation
-    #[structopt(long)]
     downsample: Option<usize>,
 
     /// Size (width) of the median average filter
-    #[structopt(long, default_value = "100")]
+    #[structopt(long, default_value = "200")]
     avg_window_width: usize,
 }
 
@@ -277,7 +278,6 @@ impl Plot for FftPlot {
     }
 }
 
-// TODO - downsample
 pub struct RmsPowerPlot {
     base_opts: BaseOpts,
     opts: RmsPowerOpts,
