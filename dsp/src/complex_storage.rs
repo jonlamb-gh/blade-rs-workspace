@@ -40,6 +40,10 @@ impl ComplexStorage {
     pub fn drain(&mut self, size: usize) {
         self.buffer.drain(..size);
     }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+    }
 }
 
 #[cfg(test)]

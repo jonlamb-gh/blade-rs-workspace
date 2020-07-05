@@ -209,6 +209,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "blade-sm-cli"
+version = "0.1.0"
+dependencies = [
+ "ctrlc",
+ "dsp",
+ "env_logger",
+ "libbladerf-sys",
+ "log",
+ "structopt",
+]
+
+[[package]]
 name = "blake2b_simd"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

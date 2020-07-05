@@ -14,7 +14,7 @@ pub use rustfft::num_traits::{clamp, clamp_max, clamp_min};
 pub use rustfft::{self, num_complex, num_traits};
 
 use crate::num_complex::Complex;
-use crate::num_traits::Num;
+use crate::num_traits::{real::Real, Num};
 
 mod base_opts;
 mod binned_frequency_range;
@@ -55,4 +55,8 @@ where
 // amplitude = power.sqrt()
 pub fn sample_to_power<T: Clone + Num>(s: &Complex<T>) -> T {
     s.norm_sqr()
+}
+
+pub fn sample_to_amplitude<T: Clone + Num + Real>(s: &Complex<T>) -> T {
+    s.norm_sqr().sqrt()
 }

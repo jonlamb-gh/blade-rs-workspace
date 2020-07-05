@@ -1,0 +1,21 @@
+[package]
+name = "blade-sm-cli"
+version = "0.1.0"
+authors = ["Jon Lamb"]
+edition = "2018"
+
+[[bin]]
+name = "blade-sm"
+path = "src/main.rs"
+
+[dependencies]
+log = "0.4"
+env_logger = "0.7"
+structopt = "0.3"
+ctrlc = "3.1"
+
+[dependencies.libbladerf-sys]
+path = "../libbladeRF-sys"
+
+[dependencies.dsp]
+path = "../dsp"

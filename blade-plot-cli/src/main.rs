@@ -341,7 +341,8 @@ impl Plot for RmsPowerPlot {
             )
             .x_label_area_size(40)
             .y_label_area_size(50)
-            .build_ranged(0..self.opts.plot_width, 0_f64..1.0_f64)?;
+            .build_ranged(0..self.opts.plot_width, 0_f64..0.2_f64)?;
+        //.build_ranged(0..self.opts.plot_width, 0_f64..1.0_f64)?;
 
         cc.configure_mesh()
             .x_label_formatter(&|x| {

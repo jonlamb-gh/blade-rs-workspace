@@ -1,6 +1,7 @@
 use libbladerf_sys::{Device, Error, Metadata, UnitExt};
 use std::convert::TryFrom;
 
+// TODO - timeout config
 pub struct DeviceReader {
     dev: Device,
     sample_buffer: Vec<i16>,

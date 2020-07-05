@@ -6,6 +6,6 @@ members = [
     "dsp",
     "blade-logfile-cli",
     "blade-log-cli",
-    #"blade-power-log-cli",
     "blade-plot-cli",
+    "blade-sm-cli",
 ]
