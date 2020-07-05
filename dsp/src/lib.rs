@@ -1,20 +1,22 @@
 // TODO - replace custom stuff with things from
 // https://github.com/signalo/signalo
 
-pub use binned_frequency_range::BinnedFrequencyRange;
-pub use complex_storage::ComplexStorage;
-pub use device_limits::{DeviceLimits, LimitsError};
-pub use device_reader::DeviceReader;
-pub use filter::Filter;
+pub use crate::base_opts::BaseOpts;
+pub use crate::binned_frequency_range::BinnedFrequencyRange;
+pub use crate::complex_storage::ComplexStorage;
+pub use crate::device_limits::{DeviceLimits, LimitsError};
+pub use crate::device_reader::DeviceReader;
+pub use crate::filter::Filter;
+pub use crate::vecops::VecOps;
 pub use hertz;
 pub use median;
 pub use rustfft::num_traits::{clamp, clamp_max, clamp_min};
 pub use rustfft::{self, num_complex, num_traits};
-pub use vecops::VecOps;
 
 use crate::num_complex::Complex;
 use crate::num_traits::Num;
 
+mod base_opts;
 mod binned_frequency_range;
 mod complex_storage;
 mod device_limits;

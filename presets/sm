@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# Smart meter in the 900 MHz ISM band
+
+export BLADELOG_FREQUENCY="912600155"
+export BLADELOG_SAMPLE_RATE="2000000"
+export BLADELOG_BANDWIDTH="1500K"

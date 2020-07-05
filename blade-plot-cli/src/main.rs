@@ -4,7 +4,7 @@ use dsp::{
     num_complex::Complex,
     num_traits::Zero,
     rustfft::{FFTplanner, FFT},
-    sample_to_power, ComplexStorage, DeviceLimits, DeviceReader, Filter, VecOps,
+    sample_to_power, BaseOpts, ComplexStorage, DeviceLimits, DeviceReader, Filter, VecOps,
 };
 use libbladerf_sys::*;
 use piston_window::{EventLoop, PistonWindow, WindowSettings};
@@ -12,14 +12,9 @@ use plotters::prelude::*;
 use std::collections::vec_deque::VecDeque;
 use std::io;
 use std::process;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
-
-// TODO
-// - reference level (dB), -10 default
-// - range (dB), 90 default
 
 #[derive(Debug, Clone, StructOpt)]
 #[structopt(name = "blade-plot", about = "BladeRF plotting")]
@@ -27,51 +22,12 @@ pub struct Opts {
     #[structopt(flatten)]
     base_opts: BaseOpts,
 
-    #[structopt(subcommand)]
-    plot_mode: PlotMode,
-}
-
-#[derive(Debug, Clone, StructOpt)]
-pub struct BaseOpts {
-    /// BladeRF device ID.
-    ///
-    /// Format: <backend>:[device=<bus>:<addr>] [instance=<n>] [serial=<serial>]
-    ///
-    /// Example: "*:serial=f12ce1037830a1b27f3ceeba1f521413"
-    #[structopt(short = "d", long, env = "BLADELOG_DEVICE_ID")]
-    device_id: String,
-
-    /// Frequency (Hertz)
-    ///
-    /// Accepts:
-    ///
-    /// * Hertz: <num>H | <num>h
-    ///
-    /// * KiloHertz: <num>K | <num>k
-    ///
-    /// * MegaHertz: <num>M | <num>m
-    #[structopt(short = "f", long, parse(try_from_str = Hertz::from_str), env = "BLADELOG_FREQUENCY")]
-    frequency: Hertz,
-
-    /// Sample rate (samples per second)
-    #[structopt(short = "s", long, parse(try_from_str = Sps::from_str), env = "BLADELOG_SAMPLE_RATE")]
-    sample_rate: Sps,
-
-    /// Bandwidth (Hertz)
-    ///
-    /// Accepts:
-    ///
-    /// * Hertz: <num>H | <num>h
-    ///
-    /// * KiloHertz: <num>K | <num>k
-    ///
-    /// * MegaHertz: <num>M | <num>m
-    #[structopt(short = "b", long, parse(try_from_str = Hertz::from_str), env = "BLADELOG_BANDWIDTH")]
-    bandwidth: Hertz,
-
     /// Print info and exit
     #[structopt(long)]
     dry_run: bool,
+
+    #[structopt(subcommand)]
+    plot_mode: PlotMode,
 }
 
 #[derive(Debug, Clone, StructOpt)]
@@ -470,7 +426,7 @@ fn main() -> Result<(), io::Error> {
     .map_err(|e| log::error!("DeviceLimits::check returned {:?}", e))
     .unwrap();
 
-    if base_opts.dry_run {
+    if opts.dry_run {
         return Ok(());
     }
 

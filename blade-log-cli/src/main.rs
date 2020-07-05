@@ -1,6 +1,7 @@
 use bincode::serialize_into;
 use blade_logfile::{Header, Packet, HEADER_PREAMBLE, VERSION};
 use chrono::prelude::*;
+use dsp::BaseOpts;
 use libbladerf_sys::*;
 use std::convert::TryFrom;
 use std::fs::File;
@@ -8,7 +9,6 @@ use std::io::prelude::*;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::process;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use structopt::StructOpt;
@@ -28,45 +28,12 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "blade-log", about = "BladeRF logging")]
 pub struct Opts {
-    /// BladeRF device ID.
-    ///
-    /// Format: <backend>:[device=<bus>:<addr>] [instance=<n>] [serial=<serial>]
-    ///
-    /// Example: "*:serial=f12ce1037830a1b27f3ceeba1f521413"
-    #[structopt(short = "d", long, env = "BLADELOG_DEVICE_ID")]
-    device_id: String,
+    #[structopt(flatten)]
+    base_opts: BaseOpts,
 
     /// Output file
     #[structopt(short = "o", long, parse(from_os_str), env = "BLADELOG_OUTPUT_PATH")]
     output_path: PathBuf,
-
-    /// Frequency (Hertz)
-    ///
-    /// Accepts:
-    ///
-    /// * Hertz: <num>H | <num>h
-    ///
-    /// * KiloHertz: <num>K | <num>k
-    ///
-    /// * MegaHertz: <num>M | <num>m
-    #[structopt(short = "f", long, parse(try_from_str = Hertz::from_str), env = "BLADELOG_FREQUENCY")]
-    frequency: Hertz,
-
-    /// Sample rate (samples per second)
-    #[structopt(short = "s", long, parse(try_from_str = Sps::from_str), env = "BLADELOG_SAMPLE_RATE")]
-    sample_rate: Sps,
-
-    /// Bandwidth (Hertz)
-    ///
-    /// Accepts:
-    ///
-    /// * Hertz: <num>H | <num>h
-    ///
-    /// * KiloHertz: <num>K | <num>k
-    ///
-    /// * MegaHertz: <num>M | <num>m
-    #[structopt(short = "b", long, parse(try_from_str = Hertz::from_str), env = "BLADELOG_BANDWIDTH")]
-    bandwidth: Hertz,
 }
 
 fn main() -> Result<(), bincode::Error> {
@@ -89,8 +56,8 @@ fn main() -> Result<(), bincode::Error> {
     let log_file = File::create(opts.output_path)?;
     let mut log_writer = BufWriter::new(log_file);
 
-    log::info!("Opening device ID '{}'", opts.device_id);
-    let mut dev = Device::open(&opts.device_id)
+    log::info!("Opening device ID '{}'", opts.base_opts.device_id);
+    let mut dev = Device::open(&opts.base_opts.device_id)
         .map_err(|e| log::error!("Device::open returned {:?}", e))
         .unwrap();
 
@@ -110,26 +77,26 @@ fn main() -> Result<(), bincode::Error> {
 
     log::info!("Channel: {}", channel);
 
-    log::info!("Frequency: {}", opts.frequency);
-    dev.set_frequency(channel, opts.frequency)
+    log::info!("Frequency: {}", opts.base_opts.frequency);
+    dev.set_frequency(channel, opts.base_opts.frequency)
         .map_err(|e| log::error!("Device::set_frequency returned {:?}", e))
         .unwrap();
 
-    log::info!("Sample rate: {}", opts.sample_rate);
+    log::info!("Sample rate: {}", opts.base_opts.sample_rate);
     let actual_sample_rate = dev
-        .set_sample_rate(channel, opts.sample_rate)
+        .set_sample_rate(channel, opts.base_opts.sample_rate)
         .map_err(|e| log::error!("Device::set_sample_rate returned {:?}", e))
         .unwrap();
-    if opts.sample_rate != actual_sample_rate {
+    if opts.base_opts.sample_rate != actual_sample_rate {
         log::warn!("Actual sample rate: {}", actual_sample_rate);
     }
 
-    log::info!("Bandwidth: {}", opts.bandwidth);
+    log::info!("Bandwidth: {}", opts.base_opts.bandwidth);
     let actual_bandwidth = dev
-        .set_bandwidth(channel, opts.bandwidth)
+        .set_bandwidth(channel, opts.base_opts.bandwidth)
         .map_err(|e| log::error!("Device::set_bandwidth returned {:?}", e))
         .unwrap();
-    if opts.bandwidth != actual_bandwidth {
+    if opts.base_opts.bandwidth != actual_bandwidth {
         log::warn!("Actual bandwidth: {}", actual_bandwidth);
     }
 
@@ -163,9 +130,9 @@ fn main() -> Result<(), bincode::Error> {
     let header = Header {
         preamble: HEADER_PREAMBLE,
         version: VERSION,
-        frequency: opts.frequency,
-        sample_rate: opts.sample_rate,
-        bandwidth: opts.bandwidth,
+        frequency: opts.base_opts.frequency,
+        sample_rate: opts.base_opts.sample_rate,
+        bandwidth: opts.base_opts.bandwidth,
         channel,
         layout: channel_layout,
         format,

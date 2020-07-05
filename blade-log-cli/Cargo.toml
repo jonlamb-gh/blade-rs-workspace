@@ -28,3 +28,6 @@ path = "../libbladeRF-sys"
 
 [dependencies.blade-logfile]
 path = "../blade-logfile"
+
+[dependencies.dsp]
+path = "../dsp"

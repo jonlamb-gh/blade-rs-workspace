@@ -54,3 +54,6 @@ scale/offset
 display utils, format as f64 in best-fit units
 plot modes, db, amp, power, rms-power, etc
 utils lib, things like FreqRange/Hops, downsample, etc
+'space' to pause the rendering
+'p' to save to image file
+
